@@ -77,9 +77,15 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     addOption("--audio-quality", "0")
                     addOption("--embed-metadata")
                 } else {
-                    val f = if (quality == "best") "bv*+ba/b"
-                    else "bv*[height<=$quality]+ba/b[height<=$quality]/b"
-                    addOption("-f", f)
+                    addOption("-f", "bv*+ba/b")
+                    // Her telefonun oynatabildiği H.264 görüntü + AAC ses tercih edilir.
+                    // (AV1/VP9 eski telefonlarda siyah ekran verir.) 4K yalnızca VP9/AV1 olduğundan serbest.
+                    val sort = when (quality) {
+                        "2160" -> "res:2160"
+                        "best" -> "vcodec:h264,res,acodec:m4a"
+                        else -> "vcodec:h264,res:$quality,acodec:m4a"
+                    }
+                    addOption("-S", sort)
                     addOption("--merge-output-format", "mp4")
                 }
             }

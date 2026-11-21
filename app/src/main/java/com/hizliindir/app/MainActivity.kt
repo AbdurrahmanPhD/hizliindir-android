@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
     private val urlRegex = Regex("""https?://\S+""")
-    private val qualities = listOf("En iyi" to "best", "1080p" to "1080", "720p" to "720", "480p" to "480", "360p" to "360")
+    private val qualities = listOf("En iyi" to "best", "1080p" to "1080", "720p" to "720", "480p" to "480", "360p" to "360", "4K (yeni telefonlar)" to "2160")
 
     private val adapter = JobAdapter(
         onCancel = { WorkManager.getInstance(this).cancelWorkById(it.info.id) },
