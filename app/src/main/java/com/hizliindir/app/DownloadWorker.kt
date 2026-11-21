@@ -56,6 +56,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             tmp.mkdirs()
             setProgress(progressData(title, -1f, -1, "İndirme motoru hazırlanıyor…"))
             withContext(Dispatchers.IO) { Engine.ensureInit(applicationContext) }
+            setProgress(progressData(title, -1f, -1, "İndirme motoru güncelleniyor…"))
+            withContext(Dispatchers.IO) { Engine.updateIfStale(applicationContext) }
 
             // Başlığı öğren (listede güzel görünsün)
             if (!playlist) {
@@ -82,21 +84,17 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 }
             }
 
-            var last = 0L
             try {
-                runInterruptible(Dispatchers.IO) {
-                    YoutubeDL.getInstance().execute(request, processId, false) { progress, eta, line ->
-                        val now = SystemClock.uptimeMillis()
-                        if (now - last > 700) {
-                            last = now
-                            setProgressAsync(progressData(title, progress, eta, line))
-                            setForegroundAsync(foregroundInfo(title, progress, statusText(progress, eta)))
-                        }
-                    }
-                }
+                runDownload(request, processId, title)
             } catch (e: CancellationException) {
-                YoutubeDL.getInstance().destroyProcessById(processId)
                 throw e
+            } catch (e: Exception) {
+                // Çoğu hata eski yt-dlp'den kaynaklanır: hemen güncelle ve bir kez daha dene
+                setProgress(progressData(title, -1f, -1, "Hata alındı, motor güncellenip tekrar deneniyor…"))
+                withContext(Dispatchers.IO) { Engine.updateIfStale(applicationContext, force = true) }
+                tmp.deleteRecursively()
+                tmp.mkdirs()
+                runDownload(request, processId, title)
             }
 
             setProgress(progressData(title, 100f, -1, "Kaydediliyor…"))
@@ -115,6 +113,25 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             return Result.failure(workDataOf(KEY_TITLE to title, KEY_ERROR to msg))
         } finally {
             tmp.deleteRecursively()
+        }
+    }
+
+    private suspend fun runDownload(request: YoutubeDLRequest, processId: String, title: String) {
+        var last = 0L
+        try {
+            runInterruptible(Dispatchers.IO) {
+                YoutubeDL.getInstance().execute(request, processId, false) { progress, eta, line ->
+                    val now = SystemClock.uptimeMillis()
+                    if (now - last > 700) {
+                        last = now
+                        setProgressAsync(progressData(title, progress, eta, line))
+                        setForegroundAsync(foregroundInfo(title, progress, statusText(progress, eta)))
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            YoutubeDL.getInstance().destroyProcessById(processId)
+            throw e
         }
     }
 
@@ -210,16 +227,18 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         fun friendlyError(e: Exception): String {
             val raw = e.message ?: e.toString()
-            val line = raw.lines().lastOrNull { it.contains("ERROR") } ?: raw.lines().firstOrNull() ?: raw
-            val clean = line.substringAfter("ERROR:").trim()
-            return when {
+            val line = raw.lines().lastOrNull { it.contains("ERROR") } ?: raw.lines().firstOrNull { it.isNotBlank() } ?: raw
+            val clean = line.substringAfter("ERROR:").trim().take(250)
+            val hint = when {
                 clean.contains("Unsupported URL", true) -> "Bu site desteklenmiyor."
                 clean.contains("Video unavailable", true) -> "Video kullanılamıyor (kaldırılmış ya da gizli)."
-                clean.contains("Sign in to confirm", true) -> "YouTube giriş istiyor. Menüden indirme motorunu güncelleyip tekrar deneyin."
-                clean.contains("Unable to download", true) || clean.contains("timed out", true) ->
-                    "Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin."
-                else -> clean.take(300)
+                clean.contains("Sign in to confirm", true) -> "YouTube bot kontrolü istedi. Biraz bekleyip tekrar deneyin."
+                clean.contains("403", true) -> "YouTube indirmeyi reddetti. Menüden motoru güncelleyip tekrar deneyin."
+                clean.contains("timed out", true) || clean.contains("Network is unreachable", true) ||
+                    clean.contains("Failed to resolve", true) -> "Bağlantı hatası. İnternetinizi kontrol edin."
+                else -> null
             }
+            return if (hint != null) "$hint\nAyrıntı: $clean" else clean
         }
     }
 }

@@ -18,6 +18,7 @@ class App : Application() {
         Thread {
             try {
                 Engine.ensureInit(this)
+                Engine.updateIfStale(this)
             } catch (e: Exception) {
                 Log.e(TAG, "Motor başlatılamadı", e)
             }
@@ -43,10 +44,14 @@ class App : Application() {
     }
 }
 
-/** yt-dlp ve ffmpeg'i bir kez başlatır. */
+/** yt-dlp ve ffmpeg'i başlatır ve yt-dlp'yi güncel tutar. */
 object Engine {
     @Volatile
     private var ready = false
+    private val updateLock = Any()
+    private const val PREFS = "engine"
+    private const val KEY_LAST_UPDATE = "last_update"
+    private const val UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000 // 12 saat
 
     @Synchronized
     fun ensureInit(context: Context) {
@@ -55,5 +60,29 @@ object Engine {
         YoutubeDL.getInstance().init(app)
         FFmpeg.getInstance().init(app)
         ready = true
+    }
+
+    /**
+     * YouTube sık değiştiği için APK'nın içindeki yt-dlp kısa sürede eskir.
+     * Son güncellemenin üzerinden 12 saat geçtiyse (ya da force ise) en yeni sürümü indirir.
+     * @return güncelleme yapıldıysa true
+     */
+    fun updateIfStale(context: Context, force: Boolean = false): Boolean {
+        return synchronized(updateLock) {
+        val app = context.applicationContext
+        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (!force && now - prefs.getLong(KEY_LAST_UPDATE, 0L) < UPDATE_INTERVAL_MS) return false
+        return try {
+            ensureInit(app)
+            val status = YoutubeDL.getInstance().updateYoutubeDL(app, YoutubeDL.UpdateChannel.STABLE)
+            prefs.edit().putLong(KEY_LAST_UPDATE, now).apply()
+            Log.i(App.TAG, "yt-dlp güncelleme: $status, sürüm ${YoutubeDL.getInstance().versionName(app)}")
+            status == YoutubeDL.UpdateStatus.DONE
+        } catch (e: Exception) {
+            Log.w(App.TAG, "yt-dlp güncellenemedi", e)
+            false
+        }
+        }
     }
 }

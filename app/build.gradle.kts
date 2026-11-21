@@ -11,8 +11,8 @@ android {
         applicationId = "com.hizliindir.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     // Her işlemci türü için ayrı (küçük) APK + hepsini içeren evrensel APK

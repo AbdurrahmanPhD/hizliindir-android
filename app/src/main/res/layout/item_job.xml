@@ -57,7 +57,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:maxLines="3"
+                android:maxLines="6"
                 android:ellipsize="end"
                 android:textAppearance="?attr/textAppearanceBodySmall" />
 
